@@ -20,10 +20,12 @@ import (
 	"context"
 
 	"github.com/pkg/errors"
+	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	addonsv1alpha1 "sigs.k8s.io/cluster-api-addon-provider-helm/api/v1alpha1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/cluster-api/util/conditions"
@@ -182,6 +184,11 @@ func (r *HelmChartProxyReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	return ctrl.Result{}, nil
 }
 
+type temp struct {
+	cl             clusterv1.Cluster
+	relProxyExists bool
+}
+
 // reconcileNormal handles the reconciliation of a HelmChartProxy when it is not being deleted. It takes a list of selected Clusters and HelmReleaseProxies
 // to uninstall the Helm chart from any Clusters that are no longer selected and to install or update the Helm chart on any Clusters that currently selected.
 func (r *HelmChartProxyReconciler) reconcileNormal(ctx context.Context, helmChartProxy *addonsv1alpha1.HelmChartProxy, clusters []clusterv1.Cluster, helmReleaseProxies []addonsv1alpha1.HelmReleaseProxy) error {
@@ -194,6 +201,63 @@ func (r *HelmChartProxyReconciler) reconcileNormal(ctx context.Context, helmChar
 		err := r.deleteOrphanedHelmReleaseProxies(ctx, helmChartProxy, clusters, helmReleaseProxies)
 		if err != nil {
 			return err
+		}
+	}
+
+	if helmChartProxy.Spec.RollingReconciliation != nil {
+		// No of matched clusters not being equal to the no of helm release proxies
+		// means that step-wise reconciliation is ongoing.
+		if len(clusters) != len(helmReleaseProxies) {
+			clustersNn := map[string]*temp{}
+			for _, cl := range clusters {
+				clustersNn[types.NamespacedName{Namespace: cl.Namespace, Name: cl.Name}.String()] = &temp{cl: cl}
+			}
+			for _, rel := range helmReleaseProxies {
+				relClusterRef := rel.Spec.ClusterRef
+				tempVal := clustersNn[types.NamespacedName{Namespace: relClusterRef.Namespace, Name: relClusterRef.Name}.String()]
+				tempVal.relProxyExists = true
+			}
+
+			relReady := helmChartProxy.GetHelmReleaseProxyReadyCondition()
+			if relReady.Status == v1.ConditionFalse {
+				for _, rel := range helmReleaseProxies {
+					relClusterRef := rel.Spec.ClusterRef
+					cluster := clustersNn[types.NamespacedName{Namespace: relClusterRef.Namespace, Name: relClusterRef.Name}.String()].cl
+
+					// Don't reconcile if the Cluster is being deleted
+					if !cluster.DeletionTimestamp.IsZero() {
+						continue
+					}
+
+					err := r.reconcileForCluster(ctx, helmChartProxy, cluster)
+					if err != nil {
+						return err
+					}
+
+				}
+				return nil
+			}
+
+			count := 0
+			for _, tt := range clustersNn {
+				if count >= helmChartProxy.Spec.RollingReconciliation.Step.IntValue() {
+					return nil
+				}
+
+				if !tt.relProxyExists {
+					// Don't reconcile if the Cluster is being deleted
+					if !tt.cl.DeletionTimestamp.IsZero() {
+						continue
+					}
+
+					err := r.reconcileForCluster(ctx, helmChartProxy, tt.cl)
+					if err != nil {
+						return err
+					}
+					count++
+				}
+			}
+
 		}
 	}
 

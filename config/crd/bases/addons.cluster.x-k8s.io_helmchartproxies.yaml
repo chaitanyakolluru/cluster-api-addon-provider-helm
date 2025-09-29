@@ -279,6 +279,19 @@ spec:
                   RepoURL is the URL of the Helm chart repository.
                   e.g. chart-path oci://repo-url/chart-name as repoURL: oci://repo-url and https://repo-url/chart-name as repoURL: https://repo-url
                 type: string
+              rollingReconciliation:
+                description: |-
+                  RollingReconciliation is an opt-in feature that allows to define
+                  step-wise reconciliation of HelmReleaseProxy resources on matching
+                  clusters. If undefined, will default to reconciliation for all clusters by
+                  default.
+                properties:
+                  step:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    x-kubernetes-int-or-string: true
+                type: object
               tlsConfig:
                 description: TLSConfig contains the TLS configuration for a HelmChartProxy.
                 properties:
