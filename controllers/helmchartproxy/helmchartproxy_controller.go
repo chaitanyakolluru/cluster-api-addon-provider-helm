@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	addonsv1alpha1 "sigs.k8s.io/cluster-api-addon-provider-helm/api/v1alpha1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/cluster-api/util/conditions"
@@ -239,8 +240,13 @@ func (r *HelmChartProxyReconciler) reconcileNormal(ctx context.Context, helmChar
 			}
 
 			count := 0
+			stepSize, err := intstr.GetScaledValueFromIntOrPercent(helmChartProxy.Spec.RollingReconciliation.Step, len(clusters), true)
+			if err != nil {
+				return err
+			}
+
 			for _, tt := range clustersNn {
-				if count >= helmChartProxy.Spec.RollingReconciliation.Step.IntValue() {
+				if count >= stepSize {
 					return nil
 				}
 
