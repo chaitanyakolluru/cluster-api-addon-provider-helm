@@ -279,7 +279,7 @@ spec:
                   RepoURL is the URL of the Helm chart repository.
                   e.g. chart-path oci://repo-url/chart-name as repoURL: oci://repo-url and https://repo-url/chart-name as repoURL: https://repo-url
                 type: string
-              stepSize:
+              rolloutStepSize:
                 anyOf:
                 - type: integer
                 - type: string

@@ -91,7 +91,7 @@ type HelmChartProxySpec struct {
 	// batch of HelmReleaseProxy resources are reconciled.
 	// If undefined, will default to creating HelmReleaseProxy resources for all
 	// matching clusters.
-	RolloutStepSize *intstr.IntOrString `json:"stepSize,omitempty"`
+	RolloutStepSize *intstr.IntOrString `json:"rolloutStepSize,omitempty"`
 
 	// Options represents CLI flags passed to Helm operations (i.e. install, upgrade, delete) and
 	// include options such as wait, skipCRDs, timeout, waitForJobs, etc.
