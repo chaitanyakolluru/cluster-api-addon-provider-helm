@@ -48,6 +48,13 @@ type HelmChartProxyReconciler struct {
 	WatchFilterValue string
 }
 
+// clusterRolloutMeta is used to gather HelmReleaseProxy resource rollout
+// metadata for matching clusters.
+type clusterRolloutMeta struct {
+	cluster        clusterv1.Cluster
+	relProxyExists bool
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *HelmChartProxyReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, options controller.Options) error {
 	log := ctrl.LoggerFrom(ctx)
@@ -185,11 +192,6 @@ func (r *HelmChartProxyReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	return ctrl.Result{}, nil
 }
 
-type temp struct {
-	cl             clusterv1.Cluster
-	relProxyExists bool
-}
-
 // reconcileNormal handles the reconciliation of a HelmChartProxy when it is not being deleted. It takes a list of selected Clusters and HelmReleaseProxies
 // to uninstall the Helm chart from any Clusters that are no longer selected and to install or update the Helm chart on any Clusters that currently selected.
 func (r *HelmChartProxyReconciler) reconcileNormal(ctx context.Context, helmChartProxy *addonsv1alpha1.HelmChartProxy, clusters []clusterv1.Cluster, helmReleaseProxies []addonsv1alpha1.HelmReleaseProxy) error {
@@ -206,24 +208,37 @@ func (r *HelmChartProxyReconciler) reconcileNormal(ctx context.Context, helmChar
 	}
 
 	if helmChartProxy.Spec.RolloutStepSize != nil {
-		// No of matched clusters not being equal to the no of helm release proxies
-		// means that step-wise reconciliation is ongoing.
+		// Not all helm release proxies for matching clusters have yet been
+		// created.
 		if len(clusters) != len(helmReleaseProxies) {
-			clustersNn := map[string]*temp{}
+			conditions.MarkFalse(
+				helmChartProxy,
+				addonsv1alpha1.HelmReleaseProxiesRolloutStepReadyCondition,
+				addonsv1alpha1.HelmReleaseProxiesRolloutStepNotReady,
+				clusterv1.ConditionSeverityInfo,
+				"%d Helm release proxies not yet rolled out",
+				len(clusters)-len(helmReleaseProxies),
+			)
+
+			// Identifies clusters by their namespaced name and if its
+			// helmReleaseProxies has been created.
+			clustersNnRolloutMeta := map[string]*clusterRolloutMeta{}
 			for _, cl := range clusters {
-				clustersNn[types.NamespacedName{Namespace: cl.Namespace, Name: cl.Name}.String()] = &temp{cl: cl}
+				clustersNnRolloutMeta[types.NamespacedName{Namespace: cl.Namespace, Name: cl.Name}.String()] = &clusterRolloutMeta{cluster: cl}
 			}
 			for _, rel := range helmReleaseProxies {
 				relClusterRef := rel.Spec.ClusterRef
-				tempVal := clustersNn[types.NamespacedName{Namespace: relClusterRef.Namespace, Name: relClusterRef.Name}.String()]
-				tempVal.relProxyExists = true
+				rltMeta := clustersNnRolloutMeta[types.NamespacedName{Namespace: relClusterRef.Namespace, Name: relClusterRef.Name}.String()]
+				rltMeta.relProxyExists = true
 			}
 
-			relReady := helmChartProxy.GetHelmReleaseProxyReadyCondition()
-			if relReady.Status == v1.ConditionFalse {
+			relProxyRdyCnd := helmChartProxy.GetHelmReleaseProxyReadyCondition()
+			// If ready condition is false, reconcile existing helmReleaseProxies and
+			// exit.
+			if relProxyRdyCnd.Status == v1.ConditionFalse {
 				for _, rel := range helmReleaseProxies {
 					relClusterRef := rel.Spec.ClusterRef
-					cluster := clustersNn[types.NamespacedName{Namespace: relClusterRef.Namespace, Name: relClusterRef.Name}.String()].cl
+					cluster := clustersNnRolloutMeta[types.NamespacedName{Namespace: relClusterRef.Namespace, Name: relClusterRef.Name}.String()].cluster
 
 					// Don't reconcile if the Cluster is being deleted
 					if !cluster.DeletionTimestamp.IsZero() {
@@ -239,24 +254,26 @@ func (r *HelmChartProxyReconciler) reconcileNormal(ctx context.Context, helmChar
 				return nil
 			}
 
+			// Ready condition is True. Continue with reconciling the next batch of
+			// HelmReleaseProxies.
 			count := 0
 			stepSize, err := intstr.GetScaledValueFromIntOrPercent(helmChartProxy.Spec.RolloutStepSize, len(clusters), true)
 			if err != nil {
 				return err
 			}
 
-			for _, tt := range clustersNn {
+			for _, clsNnRolloutMeta := range clustersNnRolloutMeta {
 				if count >= stepSize {
 					return nil
 				}
 
-				if !tt.relProxyExists {
+				if !clsNnRolloutMeta.relProxyExists {
 					// Don't reconcile if the Cluster is being deleted
-					if !tt.cl.DeletionTimestamp.IsZero() {
+					if !clsNnRolloutMeta.cluster.DeletionTimestamp.IsZero() {
 						continue
 					}
 
-					err := r.reconcileForCluster(ctx, helmChartProxy, tt.cl)
+					err := r.reconcileForCluster(ctx, helmChartProxy, clsNnRolloutMeta.cluster)
 					if err != nil {
 						return err
 					}
@@ -264,8 +281,15 @@ func (r *HelmChartProxyReconciler) reconcileNormal(ctx context.Context, helmChar
 				}
 			}
 
+			// In cases where the remaining clusters to be reconciled is less than
+			// the determined stepSize.
+			return nil
 		}
 	}
+	// Setting Rollout Step condition to True in cases where RolloutStepSize is
+	// defined and HelmReleaseProxies have been rolled out and in cases where it
+	// is undefined.
+	conditions.MarkTrue(helmChartProxy, addonsv1alpha1.HelmReleaseProxiesRolloutStepReadyCondition)
 
 	for _, cluster := range clusters {
 		// Don't reconcile if the Cluster is being deleted
@@ -391,6 +415,7 @@ func patchHelmChartProxy(ctx context.Context, patchHelper *patch.Helper, helmCha
 		conditions.WithConditions(
 			addonsv1alpha1.HelmReleaseProxySpecsUpToDateCondition,
 			addonsv1alpha1.HelmReleaseProxiesReadyCondition,
+			addonsv1alpha1.HelmReleaseProxiesRolloutStepReadyCondition,
 		),
 	)
 
@@ -402,6 +427,7 @@ func patchHelmChartProxy(ctx context.Context, patchHelper *patch.Helper, helmCha
 			clusterv1.ReadyCondition,
 			addonsv1alpha1.HelmReleaseProxySpecsUpToDateCondition,
 			addonsv1alpha1.HelmReleaseProxiesReadyCondition,
+			addonsv1alpha1.HelmReleaseProxiesRolloutStepReadyCondition,
 		}},
 		patch.WithStatusObservedGeneration{},
 	)
