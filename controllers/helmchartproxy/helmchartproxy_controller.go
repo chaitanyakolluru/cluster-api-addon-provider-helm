@@ -205,7 +205,7 @@ func (r *HelmChartProxyReconciler) reconcileNormal(ctx context.Context, helmChar
 		}
 	}
 
-	if helmChartProxy.Spec.RollingReconciliation != nil {
+	if helmChartProxy.Spec.RolloutStepSize != nil {
 		// No of matched clusters not being equal to the no of helm release proxies
 		// means that step-wise reconciliation is ongoing.
 		if len(clusters) != len(helmReleaseProxies) {
@@ -240,7 +240,7 @@ func (r *HelmChartProxyReconciler) reconcileNormal(ctx context.Context, helmChar
 			}
 
 			count := 0
-			stepSize, err := intstr.GetScaledValueFromIntOrPercent(helmChartProxy.Spec.RollingReconciliation.Step, len(clusters), true)
+			stepSize, err := intstr.GetScaledValueFromIntOrPercent(helmChartProxy.Spec.RolloutStepSize, len(clusters), true)
 			if err != nil {
 				return err
 			}

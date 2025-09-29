@@ -85,11 +85,13 @@ type HelmChartProxySpec struct {
 	// +optional
 	ReconcileStrategy string `json:"reconcileStrategy,omitempty"`
 
-	// RollingReconciliation is an opt-in feature that allows to define
-	// step-wise reconciliation of HelmReleaseProxy resources on matching
-	// clusters. If undefined, will default to reconciliation for all clusters by
-	// default.
-	RollingReconciliation *RollingReconciliation `json:"rollingReconciliation,omitempty"`
+	// RolloutStepSize is an opt-in feature that defines the step size during
+	// initial rollout of HelmReleaseProxy resources on matching clusters.
+	// Once all existing HelmReleaseProxy resources are ready=true, the next
+	// batch of HelmReleaseProxy resources are reconciled.
+	// If undefined, will default to creating HelmReleaseProxy resources for all
+	// matching clusters.
+	RolloutStepSize *intstr.IntOrString `json:"stepSize,omitempty"`
 
 	// Options represents CLI flags passed to Helm operations (i.e. install, upgrade, delete) and
 	// include options such as wait, skipCRDs, timeout, waitForJobs, etc.
@@ -232,10 +234,6 @@ type Credentials struct {
 
 	// Key is the key in the Secret containing the OCI credentials.
 	Key string `json:"key"`
-}
-
-type RollingReconciliation struct {
-	Step *intstr.IntOrString `json:"step,omitempty"`
 }
 
 // TLSConfig defines a TLS configuration.
