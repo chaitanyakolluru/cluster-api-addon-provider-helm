@@ -235,7 +235,7 @@ func (r *HelmChartProxyReconciler) reconcileNormal(ctx context.Context, helmChar
 			relProxyRdyCnd := helmChartProxy.GetHelmReleaseProxyReadyCondition()
 			// If ready condition is false, reconcile existing helmReleaseProxies and
 			// exit.
-			if relProxyRdyCnd.Status == v1.ConditionFalse {
+			if relProxyRdyCnd != nil && (relProxyRdyCnd.Status == v1.ConditionFalse) {
 				for _, rel := range helmReleaseProxies {
 					relClusterRef := rel.Spec.ClusterRef
 					cluster := clustersNnRolloutMeta[types.NamespacedName{Namespace: relClusterRef.Namespace, Name: relClusterRef.Name}.String()].cluster
