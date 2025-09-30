@@ -254,8 +254,8 @@ func (r *HelmChartProxyReconciler) reconcileNormal(ctx context.Context, helmChar
 				return nil
 			}
 
-			// Ready condition is True. Continue with reconciling the next batch of
-			// HelmReleaseProxies.
+			// HelmReleaseProxyReadyCondition is True; continue with reconciling the
+			// next batch of HelmReleaseProxies.
 			count := 0
 			stepSize, err := intstr.GetScaledValueFromIntOrPercent(helmChartProxy.Spec.RolloutStepSize, len(clusters), true)
 			if err != nil {
