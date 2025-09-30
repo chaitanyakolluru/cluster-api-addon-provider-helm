@@ -213,12 +213,12 @@ func (r *HelmChartProxyReconciler) reconcileNormal(ctx context.Context, helmChar
 	// the count of matching clusters.
 	if helmChartProxy.Spec.RolloutStepSize != nil {
 		if len(clusters) != len(helmReleaseProxies) {
-			// Set HelmReleaseProxiesRolloutStepReadyCondition to false as
+			// Set HelmReleaseProxiesRolloutCompletedCondition to false as
 			// HelmReleaseProxies are being rolled out.
 			conditions.MarkFalse(
 				helmChartProxy,
-				addonsv1alpha1.HelmReleaseProxiesRolloutStepReadyCondition,
-				addonsv1alpha1.HelmReleaseProxiesRolloutStepNotReady,
+				addonsv1alpha1.HelmReleaseProxiesRolloutCompletedCondition,
+				addonsv1alpha1.HelmReleaseProxiesRolloutNotReady,
 				clusterv1.ConditionSeverityInfo,
 				"%d Helm release proxies not yet rolled out",
 				len(clusters)-len(helmReleaseProxies),
@@ -290,15 +290,18 @@ func (r *HelmChartProxyReconciler) reconcileNormal(ctx context.Context, helmChar
 			// out is less than rollout step size.
 			return nil
 		}
+		// RolloutStepSize is defined and all HelmReleaseProxies have been rolled out.
+		conditions.MarkTrue(helmChartProxy, addonsv1alpha1.HelmReleaseProxiesRolloutCompletedCondition)
+	} else {
+		// RolloutStepSize is undefined. Set HelmReleaseProxiesRolloutCompletedCondition to True with reason.
+		conditions.MarkTrueWithNegativePolarity(
+			helmChartProxy,
+			addonsv1alpha1.HelmReleaseProxiesRolloutCompletedCondition,
+			addonsv1alpha1.HelmReleaseProxiesRolloutUndefined,
+			clusterv1.ConditionSeverityInfo,
+			"HelmChartProxy does not use Rollout Step Size",
+		)
 	}
-
-	// RolloutStepSize is either:
-	//  - undefined or
-	//  - is defined and HelmReleaseProxies have been rolled out.
-	// In both cases, set HelmReleaseProxiesRolloutStepReadyCondition to True. We
-	// include this condition as part of Summary Ready condition and thus need to
-	// set it even when RolloutStepSize is undefined.
-	conditions.MarkTrue(helmChartProxy, addonsv1alpha1.HelmReleaseProxiesRolloutStepReadyCondition)
 
 	// Continue with reconciling for all clusters after initial rollout.
 	for _, cluster := range clusters {
@@ -425,7 +428,7 @@ func patchHelmChartProxy(ctx context.Context, patchHelper *patch.Helper, helmCha
 		conditions.WithConditions(
 			addonsv1alpha1.HelmReleaseProxySpecsUpToDateCondition,
 			addonsv1alpha1.HelmReleaseProxiesReadyCondition,
-			addonsv1alpha1.HelmReleaseProxiesRolloutStepReadyCondition,
+			addonsv1alpha1.HelmReleaseProxiesRolloutCompletedCondition,
 		),
 	)
 
@@ -437,7 +440,7 @@ func patchHelmChartProxy(ctx context.Context, patchHelper *patch.Helper, helmCha
 			clusterv1.ReadyCondition,
 			addonsv1alpha1.HelmReleaseProxySpecsUpToDateCondition,
 			addonsv1alpha1.HelmReleaseProxiesReadyCondition,
-			addonsv1alpha1.HelmReleaseProxiesRolloutStepReadyCondition,
+			addonsv1alpha1.HelmReleaseProxiesRolloutCompletedCondition,
 		}},
 		patch.WithStatusObservedGeneration{},
 	)
