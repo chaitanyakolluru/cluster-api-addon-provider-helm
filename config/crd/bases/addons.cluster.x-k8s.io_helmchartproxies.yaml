@@ -279,10 +279,7 @@ spec:
                   RepoURL is the URL of the Helm chart repository.
                   e.g. chart-path oci://repo-url/chart-name as repoURL: oci://repo-url and https://repo-url/chart-name as repoURL: https://repo-url
                 type: string
-              rolloutStepSize:
-                anyOf:
-                - type: integer
-                - type: string
+              rolloutOptions:
                 description: |-
                   RolloutStepSize is an opt-in feature that defines a step size during the
                   initial rollout of HelmReleaseProxies on matching clusters. Once all
@@ -290,7 +287,30 @@ spec:
                   HelmReleaseProxy resources are reconciled. If undefined, will default to
                   creating HelmReleaseProxy resources for all matching clusters.
                   e.g. an int (5) or percentage of count of total matching clusters (25%)
-                x-kubernetes-int-or-string: true
+                properties:
+                  stepIncrement:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    x-kubernetes-int-or-string: true
+                  stepInit:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: |-
+                      RolloutStepSize is an opt-in feature that defines a step size during the
+                      initial rollout of HelmReleaseProxies on matching clusters. Once all
+                      rolled out HelmReleaseProxy resources are ready=true, the next batch of
+                      HelmReleaseProxy resources are reconciled. If undefined, will default to
+                      creating HelmReleaseProxy resources for all matching clusters.
+                      e.g. an int (5) or percentage of count of total matching clusters (25%)
+                    x-kubernetes-int-or-string: true
+                  stepLimit:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    x-kubernetes-int-or-string: true
+                type: object
               tlsConfig:
                 description: TLSConfig contains the TLS configuration for a HelmChartProxy.
                 properties:
@@ -435,6 +455,8 @@ spec:
                 description: ObservedGeneration is the latest generation observed
                   by the controller.
                 format: int64
+                type: integer
+              rollout:
                 type: integer
             type: object
         type: object

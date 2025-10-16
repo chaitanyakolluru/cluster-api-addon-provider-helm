@@ -44,6 +44,21 @@ const (
 	ReconcileStrategyInstallOnce ReconcileStrategy = "InstallOnce"
 )
 
+type RolloutOptions struct {
+	// RolloutStepSize is an opt-in feature that defines a step size during the
+	// initial rollout of HelmReleaseProxies on matching clusters. Once all
+	// rolled out HelmReleaseProxy resources are ready=true, the next batch of
+	// HelmReleaseProxy resources are reconciled. If undefined, will default to
+	// creating HelmReleaseProxy resources for all matching clusters.
+	// e.g. an int (5) or percentage of count of total matching clusters (25%)
+	// +optional
+	StepInit *intstr.IntOrString `json:"stepInit,omitempty"`
+
+	StepIncrement *intstr.IntOrString `json:"stepIncrement,omitempty"`
+
+	StepLimit *intstr.IntOrString `json:"stepLimit,omitempty"`
+}
+
 // HelmChartProxySpec defines the desired state of HelmChartProxy.
 type HelmChartProxySpec struct {
 	// ClusterSelector selects Clusters in the same namespace with a label that matches the specified label selector. The Helm
@@ -85,6 +100,10 @@ type HelmChartProxySpec struct {
 	// +optional
 	ReconcileStrategy string `json:"reconcileStrategy,omitempty"`
 
+	// InstallRolloutOptions *RolloutOptions `json:"rolloutOptions,omitempty"`
+	//
+	// UpgradeRolloutOptions *RolloutOptions `json:"rolloutOptions,omitempty"`
+
 	// RolloutStepSize is an opt-in feature that defines a step size during the
 	// initial rollout of HelmReleaseProxies on matching clusters. Once all
 	// rolled out HelmReleaseProxy resources are ready=true, the next batch of
@@ -92,7 +111,7 @@ type HelmChartProxySpec struct {
 	// creating HelmReleaseProxy resources for all matching clusters.
 	// e.g. an int (5) or percentage of count of total matching clusters (25%)
 	// +optional
-	RolloutStepSize *intstr.IntOrString `json:"rolloutStepSize,omitempty"`
+	RolloutOptions *RolloutOptions `json:"rolloutOptions,omitempty"`
 
 	// Options represents CLI flags passed to Helm operations (i.e. install, upgrade, delete) and
 	// include options such as wait, skipCRDs, timeout, waitForJobs, etc.
@@ -257,6 +276,8 @@ type HelmChartProxyStatus struct {
 	// MatchingClusters is the list of references to Clusters selected by the ClusterSelector.
 	// +optional
 	MatchingClusters []corev1.ObjectReference `json:"matchingClusters"`
+
+	RolloutStepSize *int `json:"rollout,omitempty"`
 
 	// ObservedGeneration is the latest generation observed by the controller.
 	// +optional
