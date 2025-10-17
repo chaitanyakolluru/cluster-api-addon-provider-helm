@@ -395,17 +395,25 @@ func (r *HelmChartProxyReconciler) rolloutReconcile(ctx context.Context, helmCha
 			var oldStepSize int
 			oldStepSize = ptr.Deref(helmChartProxy.Status.Rollout.StepSize, oldStepSize)
 
-			stepIncrement, err := intstr.GetScaledValueFromIntOrPercent(helmChartProxy.Spec.UpgradeRolloutOptions.StepIncrement, len(clusters), true)
-			if err != nil {
-				return err
+			var stepIncrement int
+			var err error
+			if helmChartProxy.Spec.UpgradeRolloutOptions.StepIncrement != nil {
+				stepIncrement, err = intstr.GetScaledValueFromIntOrPercent(helmChartProxy.Spec.UpgradeRolloutOptions.StepIncrement, len(clusters), true)
+				if err != nil {
+					return err
+				}
 			}
-			stepLimit, err := intstr.GetScaledValueFromIntOrPercent(helmChartProxy.Spec.UpgradeRolloutOptions.StepLimit, len(clusters), true)
-			if err != nil {
-				return err
+
+			var stepLimit int
+			if helmChartProxy.Spec.UpgradeRolloutOptions.StepLimit != nil {
+				stepLimit, err = intstr.GetScaledValueFromIntOrPercent(helmChartProxy.Spec.UpgradeRolloutOptions.StepLimit, len(clusters), true)
+				if err != nil {
+					return err
+				}
 			}
 
 			stepSize = oldStepSize + stepIncrement
-			if stepSize > stepLimit {
+			if stepLimit > 0 && stepSize > stepLimit {
 				stepSize = stepLimit
 			}
 
