@@ -61,6 +61,13 @@ type helmReleaseProxyRolloutMeta struct {
 	hrpReady bool
 }
 
+type installOrUpgrade string
+
+const (
+	install installOrUpgrade = "install"
+	upgrade installOrUpgrade = "upgrade"
+)
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *HelmChartProxyReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, options controller.Options) error {
 	log := ctrl.LoggerFrom(ctx)
@@ -213,157 +220,147 @@ func (r *HelmChartProxyReconciler) reconcileNormal(ctx context.Context, helmChar
 		}
 	}
 
+	if helmChartProxy.GetGeneration() == 1 {
+		if helmChartProxy.Spec.InstallRolloutOptions == nil {
+			// RolloutStepSize is undefined. Set HelmReleaseProxiesRolloutCompletedCondition to True with reason.
+			conditions.MarkTrueWithNegativePolarity(
+				helmChartProxy,
+				addonsv1alpha1.HelmReleaseProxiesRolloutCompletedCondition,
+				addonsv1alpha1.HelmReleaseProxiesRolloutUndefinedReason,
+				clusterv1.ConditionSeverityInfo,
+				"HelmChartProxy does not use rollout step",
+			)
+
+			for _, cluster := range clusters {
+				err := r.reconcileForCluster(ctx, helmChartProxy, cluster)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+
+		// rollout with install rollout options.
+		return r.rolloutReconcile(ctx, helmChartProxy, clusters, helmReleaseProxies, install)
+	}
+
+	if helmChartProxy.Spec.UpgradeRolloutOptions == nil {
+		// RolloutStepSize is undefined. Set HelmReleaseProxiesRolloutCompletedCondition to True with reason.
+		conditions.MarkTrueWithNegativePolarity(
+			helmChartProxy,
+			addonsv1alpha1.HelmReleaseProxiesRolloutCompletedCondition,
+			addonsv1alpha1.HelmReleaseProxiesRolloutUndefinedReason,
+			clusterv1.ConditionSeverityInfo,
+			"HelmChartProxy does not use rollout step",
+		)
+
+		for _, cluster := range clusters {
+			err := r.reconcileForCluster(ctx, helmChartProxy, cluster)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	// rollout with upgrade rollout options.
+	return r.rolloutReconcile(ctx, helmChartProxy, clusters, helmReleaseProxies, upgrade)
+}
+
+func (r *HelmChartProxyReconciler) rolloutReconcile(ctx context.Context, helmChartProxy *addonsv1alpha1.HelmChartProxy, clusters []clusterv1.Cluster, helmReleaseProxies []addonsv1alpha1.HelmReleaseProxy, installOrUpgrade installOrUpgrade) error {
+	var rolloutOptions *addonsv1alpha1.RolloutOptions
+
+	switch installOrUpgrade {
+	case install:
+		rolloutOptions = helmChartProxy.Spec.InstallRolloutOptions
+	case upgrade:
+		rolloutOptions = helmChartProxy.Spec.UpgradeRolloutOptions
+	}
+
 	// RolloutStepSize is defined; check if count of HelmReleaseProxies matches
 	// the count of matching clusters.
-	if helmChartProxy.Spec.RolloutOptions != nil {
-		if helmChartProxy.Spec.RolloutOptions.StepInit != nil {
-			if len(clusters) != len(helmReleaseProxies) {
-				// Set HelmReleaseProxiesRolloutCompletedCondition to false as
-				// HelmReleaseProxies are being rolled out.
-				conditions.MarkFalse(
-					helmChartProxy,
-					addonsv1alpha1.HelmReleaseProxiesRolloutCompletedCondition,
-					addonsv1alpha1.HelmReleaseProxiesRolloutNotCompleteReason,
-					clusterv1.ConditionSeverityInfo,
-					"%d Helm release proxies not yet rolled out",
-					len(clusters)-len(helmReleaseProxies),
-				)
+	if rolloutOptions != nil {
+		var rolloutCount int
+		rolloutCount = ptr.Deref(helmChartProxy.Status.Rollout.Count, rolloutCount)
+		if len(clusters) != rolloutCount {
+			// Set HelmReleaseProxiesRolloutCompletedCondition to false as
+			// HelmReleaseProxies are being rolled out.
+			conditions.MarkFalse(
+				helmChartProxy,
+				addonsv1alpha1.HelmReleaseProxiesRolloutCompletedCondition,
+				addonsv1alpha1.HelmReleaseProxiesRolloutNotCompleteReason,
+				clusterv1.ConditionSeverityInfo,
+				"%d Helm release proxies not yet rolled out",
+				len(clusters)-rolloutCount,
+			)
 
-				// Identifies clusters by their NamespacedName and gathers their
-				// helmReleaseProxyRolloutMeta.
-				clusterNnRolloutMeta := map[string]*helmReleaseProxyRolloutMeta{}
-				for _, c := range clusters {
-					nn := getNamespacedNameStringFor(c.Namespace, c.Name)
-					clusterNnRolloutMeta[nn] = &helmReleaseProxyRolloutMeta{
-						cluster: c,
-					}
+			// Identifies clusters by their NamespacedName and gathers their
+			// helmReleaseProxyRolloutMeta.
+			clusterNnRolloutMeta := map[string]*helmReleaseProxyRolloutMeta{}
+			for _, c := range clusters {
+				nn := getNamespacedNameStringFor(c.Namespace, c.Name)
+				clusterNnRolloutMeta[nn] = &helmReleaseProxyRolloutMeta{
+					cluster: c,
 				}
-				for _, h := range helmReleaseProxies {
-					ref := h.Spec.ClusterRef
-					nn := getNamespacedNameStringFor(ref.Namespace, ref.Name)
-					meta := clusterNnRolloutMeta[nn]
-					meta.hrpExists = true
-					meta.hrpReady = conditions.IsTrue(&h, addonsv1alpha1.HelmReleaseReadyCondition)
-				}
+			}
+			for _, h := range helmReleaseProxies {
+				ref := h.Spec.ClusterRef
+				nn := getNamespacedNameStringFor(ref.Namespace, ref.Name)
+				meta := clusterNnRolloutMeta[nn]
+				meta.hrpExists = true
+				meta.hrpReady = conditions.IsTrue(&h, addonsv1alpha1.HelmReleaseReadyCondition)
+			}
 
-				// Sort helmReleaseProxy rollout metadata by cluster namespaced name to
-				// ensure orderliness.
-				rolloutMetaSorted := make([]*helmReleaseProxyRolloutMeta, len(clusterNnRolloutMeta))
-				i := 0
-				for _, m := range clusterNnRolloutMeta {
-					rolloutMetaSorted[i] = m
-					i++
-				}
-				for m := range clusterNnRolloutMeta {
-					delete(clusterNnRolloutMeta, m)
-				}
+			// Sort helmReleaseProxy rollout metadata by cluster namespaced name to
+			// ensure orderliness.
+			rolloutMetaSorted := make([]*helmReleaseProxyRolloutMeta, len(clusterNnRolloutMeta))
+			i := 0
+			for _, m := range clusterNnRolloutMeta {
+				rolloutMetaSorted[i] = m
+				i++
+			}
+			for m := range clusterNnRolloutMeta {
+				delete(clusterNnRolloutMeta, m)
+			}
 
-				slices.SortStableFunc(rolloutMetaSorted, func(a, b *helmReleaseProxyRolloutMeta) int {
-					nnA := getNamespacedNameStringFor(a.cluster.Namespace, a.cluster.Name)
-					nnB := getNamespacedNameStringFor(b.cluster.Namespace, b.cluster.Name)
-					if nnA < nnB {
-						return -1
-					}
-
-					if nnA > nnB {
-						return 1
-					}
-
-					return 0
-				})
-
-				// If HelmReleaseProxiesReadyCondition is Unknown, create the first batch
-				// of HelmReleaseProxies and exit.
-				if conditions.IsUnknown(helmChartProxy, addonsv1alpha1.HelmReleaseProxiesReadyCondition) {
-					count := 0
-					stepSize, err := intstr.GetScaledValueFromIntOrPercent(helmChartProxy.Spec.RolloutOptions.StepInit, len(clusters), true)
-					if err != nil {
-						return err
-					}
-					defer func() {
-						helmChartProxy.Status.RolloutStepSize = ptr.To(stepSize)
-					}()
-
-					// If HelmReleaseProxiesReadyCondition is Unknown and the first batch of HelmReleaseProxies have
-					// been created, then exit early.
-					if stepSize == len(helmReleaseProxies) {
-						return nil
-					}
-
-					for _, meta := range rolloutMetaSorted {
-						// The first batch of helmReleaseProxies have been reconciled.
-						if count >= stepSize {
-							return nil
-						}
-
-						err := r.reconcileForCluster(ctx, helmChartProxy, meta.cluster)
-						if err != nil {
-							return err
-						}
-						count++
-					}
-
-					// In cases where the count of remaining HelmReleaseProxies to be rolled
-					// out is less than rollout step size.
-					return nil
+			slices.SortStableFunc(rolloutMetaSorted, func(a, b *helmReleaseProxyRolloutMeta) int {
+				nnA := getNamespacedNameStringFor(a.cluster.Namespace, a.cluster.Name)
+				nnB := getNamespacedNameStringFor(b.cluster.Namespace, b.cluster.Name)
+				if nnA < nnB {
+					return -1
 				}
 
-				// If HelmReleaseProxiesReadyCondition is false, reconcile existing
-				// HelmReleaseProxies and exit.
-				if conditions.IsFalse(helmChartProxy, addonsv1alpha1.HelmReleaseProxiesReadyCondition) {
-					for _, meta := range rolloutMetaSorted {
-						if meta.hrpExists {
-							err := r.reconcileForCluster(ctx, helmChartProxy, meta.cluster)
-							if err != nil {
-								return err
-							}
-						}
-					}
-
-					return nil
+				if nnA > nnB {
+					return 1
 				}
 
-				// HelmReleaseProxyReadyCondition is True; continue with reconciling the
-				// next batch of HelmReleaseProxies.
+				return 0
+			})
+
+			// If HelmReleaseProxiesReadyCondition is Unknown, create the first batch
+			// of HelmReleaseProxies and exit.
+			if conditions.IsUnknown(helmChartProxy, addonsv1alpha1.HelmReleaseProxiesReadyCondition) {
 				count := 0
-				var stepSize int
-				var oldStepSize int
-				oldStepSize = ptr.Deref(helmChartProxy.Status.RolloutStepSize, oldStepSize)
-
-				stepIncrement, err := intstr.GetScaledValueFromIntOrPercent(helmChartProxy.Spec.RolloutOptions.StepIncrement, len(clusters), true)
+				stepSize, err := intstr.GetScaledValueFromIntOrPercent(helmChartProxy.Spec.InstallRolloutOptions.StepInit, len(clusters), true)
 				if err != nil {
 					return err
 				}
-				stepLimit, err := intstr.GetScaledValueFromIntOrPercent(helmChartProxy.Spec.RolloutOptions.StepLimit, len(clusters), true)
-				if err != nil {
-					return err
-				}
-
-				stepSize = oldStepSize + stepIncrement
-				if stepSize > stepLimit {
-					stepSize = stepLimit
-				}
-
 				defer func() {
-					helmChartProxy.Status.RolloutStepSize = ptr.To(stepSize)
+					helmChartProxy.Status.Rollout = &addonsv1alpha1.RolloutStatus{Count: ptr.To(count), StepSize: ptr.To(stepSize)}
 				}()
 
-				for _, meta := range rolloutMetaSorted {
-					// Exit if HelmReleaseProxyReadyCondition has not caught up to existing
-					// HelmReleaseProxies status.
-					if meta.hrpExists && !meta.hrpReady {
-						return nil
-					}
+				// If HelmReleaseProxiesReadyCondition is Unknown and the first batch of HelmReleaseProxies have
+				// been created, then exit early.
+				if stepSize == len(helmReleaseProxies) {
+					return nil
+				}
 
-					// The next batch of helmReleaseProxies have been reconciled.
+				for _, meta := range rolloutMetaSorted {
+					// The first batch of helmReleaseProxies have been reconciled.
 					if count >= stepSize {
 						return nil
 					}
 
-					// Skip reconciling the cluster if its HelmReleaseProxy already exists.
-					if meta.hrpExists {
-						continue
-					}
 					err := r.reconcileForCluster(ctx, helmChartProxy, meta.cluster)
 					if err != nil {
 						return err
@@ -374,31 +371,83 @@ func (r *HelmChartProxyReconciler) reconcileNormal(ctx context.Context, helmChar
 				// In cases where the count of remaining HelmReleaseProxies to be rolled
 				// out is less than rollout step size.
 				return nil
-			} else {
-				helmChartProxy.Status.RolloutStepSize = nil
-				// RolloutStepSize is defined and all HelmReleaseProxies have been rolled out.
-				conditions.MarkTrue(helmChartProxy, addonsv1alpha1.HelmReleaseProxiesRolloutCompletedCondition)
 			}
-		}
-	} else {
-		// RolloutStepSize is undefined. Set HelmReleaseProxiesRolloutCompletedCondition to True with reason.
-		conditions.MarkTrueWithNegativePolarity(
-			helmChartProxy,
-			addonsv1alpha1.HelmReleaseProxiesRolloutCompletedCondition,
-			addonsv1alpha1.HelmReleaseProxiesRolloutUndefinedReason,
-			clusterv1.ConditionSeverityInfo,
-			"HelmChartProxy does not use rollout step",
-		)
-	}
 
-	// Continue with reconciling for all clusters after initial rollout.
-	for _, cluster := range clusters {
-		err := r.reconcileForCluster(ctx, helmChartProxy, cluster)
-		if err != nil {
-			return err
+			// If HelmReleaseProxiesReadyCondition is false, reconcile existing
+			// HelmReleaseProxies and exit.
+			if conditions.IsFalse(helmChartProxy, addonsv1alpha1.HelmReleaseProxiesReadyCondition) {
+				for _, meta := range rolloutMetaSorted {
+					if meta.hrpExists {
+						err := r.reconcileForCluster(ctx, helmChartProxy, meta.cluster)
+						if err != nil {
+							return err
+						}
+					}
+				}
+
+				return nil
+			}
+
+			// HelmReleaseProxyReadyCondition is True; continue with reconciling the
+			// next batch of HelmReleaseProxies.
+			count := 0
+			var stepSize int
+			var oldStepSize int
+			oldStepSize = ptr.Deref(helmChartProxy.Status.Rollout.StepSize, oldStepSize)
+
+			stepIncrement, err := intstr.GetScaledValueFromIntOrPercent(helmChartProxy.Spec.UpgradeRolloutOptions.StepIncrement, len(clusters), true)
+			if err != nil {
+				return err
+			}
+			stepLimit, err := intstr.GetScaledValueFromIntOrPercent(helmChartProxy.Spec.UpgradeRolloutOptions.StepLimit, len(clusters), true)
+			if err != nil {
+				return err
+			}
+
+			stepSize = oldStepSize + stepIncrement
+			if stepSize > stepLimit {
+				stepSize = stepLimit
+			}
+
+			defer func() {
+				helmChartProxy.Status.Rollout = &addonsv1alpha1.RolloutStatus{Count: ptr.To(count), StepSize: ptr.To(stepSize)}
+			}()
+
+			for _, meta := range rolloutMetaSorted {
+				// Exit if HelmReleaseProxyReadyCondition has not caught up to existing
+				// HelmReleaseProxies status.
+				if meta.hrpExists && !meta.hrpReady {
+					return nil
+				}
+
+				// The next batch of helmReleaseProxies have been reconciled.
+				if count >= stepSize {
+					return nil
+				}
+
+				// Skip reconciling the cluster if its HelmReleaseProxy already exists.
+				if meta.hrpExists {
+					continue
+				}
+				err := r.reconcileForCluster(ctx, helmChartProxy, meta.cluster)
+				if err != nil {
+					return err
+				}
+				count++
+			}
+
+			// In cases where the count of remaining HelmReleaseProxies to be rolled
+			// out is less than rollout step size.
+			return nil
+		} else {
+			helmChartProxy.Status.Rollout = nil
+
+			// RolloutStepSize is defined and all HelmReleaseProxies have been rolled out.
+			conditions.MarkTrue(helmChartProxy, addonsv1alpha1.HelmReleaseProxiesRolloutCompletedCondition)
+
+			return nil
 		}
 	}
-
 	return nil
 }
 

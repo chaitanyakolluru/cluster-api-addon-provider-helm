@@ -52,7 +52,7 @@ type RolloutOptions struct {
 	// creating HelmReleaseProxy resources for all matching clusters.
 	// e.g. an int (5) or percentage of count of total matching clusters (25%)
 	// +optional
-	StepInit *intstr.IntOrString `json:"stepInit,omitempty"`
+	StepInit *intstr.IntOrString `json:"stepInit"`
 
 	StepIncrement *intstr.IntOrString `json:"stepIncrement,omitempty"`
 
@@ -111,7 +111,9 @@ type HelmChartProxySpec struct {
 	// creating HelmReleaseProxy resources for all matching clusters.
 	// e.g. an int (5) or percentage of count of total matching clusters (25%)
 	// +optional
-	RolloutOptions *RolloutOptions `json:"rolloutOptions,omitempty"`
+	InstallRolloutOptions *RolloutOptions `json:"installRolloutOptions,omitempty"`
+
+	UpgradeRolloutOptions *RolloutOptions `json:"upgradeRolloutOptions,omitempty"`
 
 	// Options represents CLI flags passed to Helm operations (i.e. install, upgrade, delete) and
 	// include options such as wait, skipCRDs, timeout, waitForJobs, etc.
@@ -267,6 +269,11 @@ type TLSConfig struct {
 	InsecureSkipTLSVerify bool `json:"insecureSkipTLSVerify,omitempty"`
 }
 
+type RolloutStatus struct {
+	Count    *int `json:"count,omitempty"`
+	StepSize *int `json:"step_size,omitempty"`
+}
+
 // HelmChartProxyStatus defines the observed state of HelmChartProxy.
 type HelmChartProxyStatus struct {
 	// Conditions defines current state of the HelmChartProxy.
@@ -277,7 +284,7 @@ type HelmChartProxyStatus struct {
 	// +optional
 	MatchingClusters []corev1.ObjectReference `json:"matchingClusters"`
 
-	RolloutStepSize *int `json:"rollout,omitempty"`
+	Rollout *RolloutStatus `json:"rollout,omitempty"`
 
 	// ObservedGeneration is the latest generation observed by the controller.
 	// +optional
