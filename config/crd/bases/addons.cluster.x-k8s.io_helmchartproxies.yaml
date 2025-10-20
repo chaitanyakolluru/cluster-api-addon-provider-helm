@@ -485,7 +485,7 @@ spec:
                 properties:
                   count:
                     type: integer
-                  step_size:
+                  stepSize:
                     type: integer
                 type: object
             type: object

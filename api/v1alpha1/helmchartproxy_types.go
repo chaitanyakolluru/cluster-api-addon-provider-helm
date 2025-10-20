@@ -271,7 +271,7 @@ type TLSConfig struct {
 
 type RolloutStatus struct {
 	Count    *int `json:"count,omitempty"`
-	StepSize *int `json:"step_size,omitempty"`
+	StepSize *int `json:"stepSize,omitempty"`
 }
 
 // HelmChartProxyStatus defines the observed state of HelmChartProxy.
