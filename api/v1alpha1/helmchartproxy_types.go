@@ -44,21 +44,6 @@ const (
 	ReconcileStrategyInstallOnce ReconcileStrategy = "InstallOnce"
 )
 
-type RolloutOptions struct {
-	// RolloutStepSize is an opt-in feature that defines a step size during the
-	// initial rollout of HelmReleaseProxies on matching clusters. Once all
-	// rolled out HelmReleaseProxy resources are ready=true, the next batch of
-	// HelmReleaseProxy resources are reconciled. If undefined, will default to
-	// creating HelmReleaseProxy resources for all matching clusters.
-	// e.g. an int (5) or percentage of count of total matching clusters (25%)
-	// +optional
-	StepInit *intstr.IntOrString `json:"stepInit"`
-
-	StepIncrement *intstr.IntOrString `json:"stepIncrement,omitempty"`
-
-	StepLimit *intstr.IntOrString `json:"stepLimit,omitempty"`
-}
-
 // HelmChartProxySpec defines the desired state of HelmChartProxy.
 type HelmChartProxySpec struct {
 	// ClusterSelector selects Clusters in the same namespace with a label that matches the specified label selector. The Helm
@@ -100,20 +85,12 @@ type HelmChartProxySpec struct {
 	// +optional
 	ReconcileStrategy string `json:"reconcileStrategy,omitempty"`
 
-	// InstallRolloutOptions *RolloutOptions `json:"rolloutOptions,omitempty"`
-	//
-	// UpgradeRolloutOptions *RolloutOptions `json:"rolloutOptions,omitempty"`
-
-	// RolloutStepSize is an opt-in feature that defines a step size during the
-	// initial rollout of HelmReleaseProxies on matching clusters. Once all
-	// rolled out HelmReleaseProxy resources are ready=true, the next batch of
-	// HelmReleaseProxy resources are reconciled. If undefined, will default to
-	// creating HelmReleaseProxy resources for all matching clusters.
-	// e.g. an int (5) or percentage of count of total matching clusters (25%)
+	// Rollout is used to define install and upgrade level rollout options that
+	// will be used when rolling out HelmReleaseProxy resources changes. If
+	// undefined, it defaults to no rollout; i.e it applies changes to all
+	// matching clusters at once.
 	// +optional
-	InstallRolloutOptions *RolloutOptions `json:"installRolloutOptions,omitempty"`
-
-	UpgradeRolloutOptions *RolloutOptions `json:"upgradeRolloutOptions,omitempty"`
+	Rollout *Rollout `json:"rollout,omitempty"`
 
 	// Options represents CLI flags passed to Helm operations (i.e. install, upgrade, delete) and
 	// include options such as wait, skipCRDs, timeout, waitForJobs, etc.
@@ -127,6 +104,46 @@ type HelmChartProxySpec struct {
 	// TLSConfig contains the TLS configuration for a HelmChartProxy.
 	// +optional
 	TLSConfig *TLSConfig `json:"tlsConfig,omitempty"`
+}
+
+// Rollout defines install and upgrade level rollout options when rolling out
+// HelmReleaseProxy resource changes.
+type Rollout struct {
+	// Install rollout options. If left empty, it defaults to no rollout; i.e. it
+	// applies changes to all matching clusters at once.
+	// +optional
+	Install *RolloutOptions `json:"install,omitempty"`
+
+	// Upgrade rollout options. If left empty, it defaults to no rollout; i.e. it
+	// applies changes to all matching clusters at once.
+	// +optional
+	Upgrade *RolloutOptions `json:"upgrade,omitempty"`
+}
+
+// RolloutOptions defines rollout options to be used when rolling out
+// HelmReleaseProxy resource changes.
+type RolloutOptions struct {
+	// StepInit defines the initial step to start from during rollout.
+	// e.g. an int (5) or percentage of count of total matching clusters (25%)
+	StepInit *intstr.IntOrString `json:"stepInit"`
+
+	// StepIncrement defines the increment to be added to existing stepSize
+	// during rollout.
+	// If StepIncrement is undefined, it will default to stepInit.
+	// e.g. an int (5) or percentage of count of total matching clusters (25%)
+	// +optional
+	StepIncrement *intstr.IntOrString `json:"stepIncrement,omitempty"`
+
+	// StepLimit defines the upper limit on stepSize during rollout.
+	// If defined, cannot be set to less than stepInit.
+
+	// If stepIncrement is defined and if stepLimit is ommitted, it will default
+	// to 100%.
+	// If StepIncrement is undefined and if stepLimit is ommitted, it will
+	// default to stepInit.
+	// e.g. an int (5) or percentage of count of total matching clusters (25%)
+	// +optional
+	StepLimit *intstr.IntOrString `json:"stepLimit,omitempty"`
 }
 
 type HelmOptions struct {
