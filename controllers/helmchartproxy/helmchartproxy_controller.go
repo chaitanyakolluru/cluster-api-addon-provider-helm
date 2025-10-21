@@ -223,6 +223,25 @@ func (r *HelmChartProxyReconciler) reconcileNormal(ctx context.Context, helmChar
 		}
 	}
 
+	if helmChartProxy.Spec.Rollout == nil {
+		// RolloutStepSize is undefined. Set HelmReleaseProxiesRolloutCompletedCondition to True with reason.
+		conditions.MarkTrueWithNegativePolarity(
+			helmChartProxy,
+			addonsv1alpha1.HelmReleaseProxiesRolloutCompletedCondition,
+			addonsv1alpha1.HelmReleaseProxiesRolloutUndefinedReason,
+			clusterv1.ConditionSeverityInfo,
+			"HelmChartProxy does not use rollout step",
+		)
+
+		for _, cluster := range clusters {
+			err := r.reconcileForCluster(ctx, helmChartProxy, cluster)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{}, nil
+	}
+
 	if helmChartProxy.GetGeneration() == 1 {
 		if helmChartProxy.Spec.Rollout.Install == nil {
 			// RolloutStepSize is undefined. Set HelmReleaseProxiesRolloutCompletedCondition to True with reason.
