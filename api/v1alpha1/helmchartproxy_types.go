@@ -129,18 +129,18 @@ type RolloutOptions struct {
 
 	// StepIncrement defines the increment to be added to existing stepSize
 	// during rollout.
-	// If StepIncrement is undefined, it will default to stepInit.
+	// If StepIncrement is undefined, step size is set to stepInit.
 	// e.g. an int (5) or percentage of count of total matching clusters (25%)
 	// +optional
 	StepIncrement *intstr.IntOrString `json:"stepIncrement,omitempty"`
 
 	// StepLimit defines the upper limit on stepSize during rollout.
-	// If defined and set to compute to less than stepInit, stepSize will default
-	// to the value in stepInit.
-	// If stepIncrement is defined and if stepLimit is ommitted, it will default
-	// to 100%.
-	// If StepIncrement is undefined and if stepLimit is ommitted, it will
-	// default to stepInit.
+	// If defined and computes to less than stepInit, step size can reach 100%;
+	// meaning that no upper limit is set.
+	// If stepIncrement is defined and stepLimit is ommitted, step size can reach
+	// 100%; meaning that no upper limit is set.
+	// If StepIncrement is undefined and if stepLimit is ommitted, step size is
+	// defaulted to the value computed from stepInit.
 	// e.g. an int (5) or percentage of count of total matching clusters (25%)
 	// +optional
 	StepLimit *intstr.IntOrString `json:"stepLimit,omitempty"`
