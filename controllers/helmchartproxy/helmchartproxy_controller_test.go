@@ -69,7 +69,7 @@ var (
 		},
 	}
 
-	rolloutStepSizeProxy = &addonsv1alpha1.HelmChartProxy{
+	rolloutProxyWithStepInit = &addonsv1alpha1.HelmChartProxy{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: addonsv1alpha1.GroupVersion.String(),
 			Kind:       "HelmChartProxy",
@@ -97,7 +97,7 @@ var (
 		},
 	}
 
-	rolloutStepSizeProxyWithRolloutStatus = &addonsv1alpha1.HelmChartProxy{
+	rolloutProxyWithStepInitAndRolloutStatus = &addonsv1alpha1.HelmChartProxy{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: addonsv1alpha1.GroupVersion.String(),
 			Kind:       "HelmChartProxy",
@@ -128,7 +128,7 @@ var (
 		},
 	}
 
-	rolloutStepSizeProxyWithReleaseProxyReadyFalse = &addonsv1alpha1.HelmChartProxy{
+	rolloutProxyWithStepInitAndReleaseProxyReadyFalse = &addonsv1alpha1.HelmChartProxy{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: addonsv1alpha1.GroupVersion.String(),
 			Kind:       "HelmChartProxy",
@@ -165,7 +165,7 @@ var (
 		},
 	}
 
-	rolloutStepSizeProxyWithReleaseProxyReadyFalseAndRolloutStatus = &addonsv1alpha1.HelmChartProxy{
+	rolloutProxyWithStepIniReleaseReadyFalseAndRolloutStatus = &addonsv1alpha1.HelmChartProxy{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: addonsv1alpha1.GroupVersion.String(),
 			Kind:       "HelmChartProxy",
@@ -603,8 +603,8 @@ func TestReconcileNormal(t *testing.T) {
 			expectedError: "",
 		},
 		{
-			name:           "successfully select clusters and set Rollout Step Ready Condition as False",
-			helmChartProxy: rolloutStepSizeProxy,
+			name:           "successfully select clusters and set Rollout Completed condition to false when rollout is used",
+			helmChartProxy: rolloutProxyWithStepInit,
 			objects:        []client.Object{cluster1, cluster2, cluster3, cluster4},
 			expect: func(g *WithT, c client.Client, hcp *addonsv1alpha1.HelmChartProxy) {
 				g.Expect(hcp.Status.MatchingClusters).To(BeEquivalentTo([]corev1.ObjectReference{
@@ -779,7 +779,7 @@ func TestReconcileNormal(t *testing.T) {
 		},
 		{
 			name:           "mark HelmChartProxy as ready once HelmReleaseProxies are rolled out and ready",
-			helmChartProxy: rolloutStepSizeProxyWithRolloutStatus,
+			helmChartProxy: rolloutProxyWithStepInitAndRolloutStatus,
 			objects:        []client.Object{cluster1, cluster2, hrpReady1, hrpReady2},
 			expect: func(g *WithT, c client.Client, hcp *addonsv1alpha1.HelmChartProxy) {
 				g.Expect(hcp.Status.MatchingClusters).To(BeEquivalentTo([]corev1.ObjectReference{
@@ -810,7 +810,7 @@ func TestReconcileNormal(t *testing.T) {
 		},
 		{
 			name:           "mark HelmChartProxy as not-ready when not all helm release proxies are rolled out",
-			helmChartProxy: rolloutStepSizeProxyWithReleaseProxyReadyFalse,
+			helmChartProxy: rolloutProxyWithStepInitAndReleaseProxyReadyFalse,
 			objects:        []client.Object{cluster1, cluster2, hrpNotReady1},
 			expect: func(g *WithT, c client.Client, hcp *addonsv1alpha1.HelmChartProxy) {
 				g.Expect(hcp.Status.MatchingClusters).To(BeEquivalentTo([]corev1.ObjectReference{
@@ -843,7 +843,7 @@ func TestReconcileNormal(t *testing.T) {
 		},
 		{
 			name:           "mark HelmChartProxy as not-ready when all helm release proxies are rolled out and not ready",
-			helmChartProxy: rolloutStepSizeProxyWithReleaseProxyReadyFalseAndRolloutStatus,
+			helmChartProxy: rolloutProxyWithStepIniReleaseReadyFalseAndRolloutStatus,
 			objects:        []client.Object{cluster1, cluster2, hrpNotReady1, hrpNotReady2},
 			expect: func(g *WithT, c client.Client, hcp *addonsv1alpha1.HelmChartProxy) {
 				g.Expect(hcp.Status.MatchingClusters).To(BeEquivalentTo([]corev1.ObjectReference{
