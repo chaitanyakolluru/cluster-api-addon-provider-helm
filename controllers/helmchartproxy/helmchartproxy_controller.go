@@ -390,13 +390,8 @@ func (r *HelmChartProxyReconciler) rolloutReconcile(ctx context.Context, helmCha
 		}
 
 		defer func() {
-			var oldCount int
-			if helmChartProxy.Status.Rollout != nil {
-				oldCount = ptr.Deref(helmChartProxy.Status.Rollout.Count, oldCount)
-			}
-			newCount := oldCount + count
-			log.V(2).Info("Updating rollout status", "name", helmChartProxy.Name, "HelmReleaseProxiesReadyCondition", corev1.ConditionUnknown, "count", newCount, "stepSize", stepSize)
-			helmChartProxy.Status.Rollout = &addonsv1alpha1.RolloutStatus{Count: ptr.To(newCount), StepSize: ptr.To(stepSize)}
+			log.V(2).Info("Updating rollout status", "name", helmChartProxy.Name, "HelmReleaseProxiesReadyCondition", corev1.ConditionUnknown, "count", count, "stepSize", stepSize)
+			helmChartProxy.Status.Rollout = &addonsv1alpha1.RolloutStatus{Count: ptr.To(count), StepSize: ptr.To(stepSize)}
 		}()
 
 		// If HelmReleaseProxiesReadyCondition is Unknown and the first batch of HelmReleaseProxies have
@@ -469,7 +464,7 @@ func (r *HelmChartProxyReconciler) rolloutReconcile(ctx context.Context, helmCha
 
 	var stepInit int
 	if rolloutOptions.StepInit != nil {
-		stepLimit, err = intstr.GetScaledValueFromIntOrPercent(rolloutOptions.StepInit, len(clusters), true)
+		stepInit, err = intstr.GetScaledValueFromIntOrPercent(rolloutOptions.StepInit, len(clusters), true)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
