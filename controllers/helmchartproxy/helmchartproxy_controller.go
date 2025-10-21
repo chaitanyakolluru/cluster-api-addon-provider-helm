@@ -66,8 +66,9 @@ type helmReleaseProxyRolloutMeta struct {
 type installOrUpgrade string
 
 const (
-	install installOrUpgrade = "install"
-	upgrade installOrUpgrade = "upgrade"
+	install                installOrUpgrade = "install"
+	upgrade                installOrUpgrade = "upgrade"
+	hrpRolloutCompletedMsg                  = "HelmChartProxy does not use rollout"
 )
 
 // SetupWithManager sets up the controller with the Manager.
@@ -230,7 +231,7 @@ func (r *HelmChartProxyReconciler) reconcileNormal(ctx context.Context, helmChar
 			addonsv1alpha1.HelmReleaseProxiesRolloutCompletedCondition,
 			addonsv1alpha1.HelmReleaseProxiesRolloutUndefinedReason,
 			clusterv1.ConditionSeverityInfo,
-			"HelmChartProxy does not use rollout step",
+			hrpRolloutCompletedMsg,
 		)
 
 		for _, cluster := range clusters {
@@ -250,7 +251,7 @@ func (r *HelmChartProxyReconciler) reconcileNormal(ctx context.Context, helmChar
 				addonsv1alpha1.HelmReleaseProxiesRolloutCompletedCondition,
 				addonsv1alpha1.HelmReleaseProxiesRolloutUndefinedReason,
 				clusterv1.ConditionSeverityInfo,
-				"HelmChartProxy does not use rollout step",
+				hrpRolloutCompletedMsg,
 			)
 
 			for _, cluster := range clusters {
@@ -273,7 +274,7 @@ func (r *HelmChartProxyReconciler) reconcileNormal(ctx context.Context, helmChar
 			addonsv1alpha1.HelmReleaseProxiesRolloutCompletedCondition,
 			addonsv1alpha1.HelmReleaseProxiesRolloutUndefinedReason,
 			clusterv1.ConditionSeverityInfo,
-			"HelmChartProxy does not use rollout step",
+			hrpRolloutCompletedMsg,
 		)
 
 		for _, cluster := range clusters {
