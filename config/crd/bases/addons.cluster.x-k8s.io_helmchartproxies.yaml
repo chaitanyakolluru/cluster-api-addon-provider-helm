@@ -314,6 +314,9 @@ spec:
                         - type: integer
                         - type: string
                         description: |-
+                          StepLimit defines the upper limit on stepSize during rollout.
+                          If defined and set to compute to less than stepInit, stepSize will default
+                          to the value in stepInit.
                           If stepIncrement is defined and if stepLimit is ommitted, it will default
                           to 100%.
                           If StepIncrement is undefined and if stepLimit is ommitted, it will
@@ -351,6 +354,9 @@ spec:
                         - type: integer
                         - type: string
                         description: |-
+                          StepLimit defines the upper limit on stepSize during rollout.
+                          If defined and set to compute to less than stepInit, stepSize will default
+                          to the value in stepInit.
                           If stepIncrement is defined and if stepLimit is ommitted, it will default
                           to 100%.
                           If StepIncrement is undefined and if stepLimit is ommitted, it will

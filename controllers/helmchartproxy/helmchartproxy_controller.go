@@ -460,8 +460,16 @@ func (r *HelmChartProxyReconciler) rolloutReconcile(ctx context.Context, helmCha
 			}
 		}
 
+		var stepInit int
+		if rolloutOptions.StepInit != nil {
+			stepLimit, err = intstr.GetScaledValueFromIntOrPercent(rolloutOptions.StepInit, len(clusters), true)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+
 		stepSize := oldStepSize + stepIncrement
-		if stepLimit > 0 && stepSize > stepLimit {
+		if stepLimit > stepInit && stepSize > stepLimit {
 			stepSize = stepLimit
 		}
 

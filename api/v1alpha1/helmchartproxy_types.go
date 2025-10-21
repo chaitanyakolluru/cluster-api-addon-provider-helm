@@ -135,8 +135,8 @@ type RolloutOptions struct {
 	StepIncrement *intstr.IntOrString `json:"stepIncrement,omitempty"`
 
 	// StepLimit defines the upper limit on stepSize during rollout.
-	// If defined, cannot be set to less than stepInit.
-
+	// If defined and set to compute to less than stepInit, stepSize will default
+	// to the value in stepInit.
 	// If stepIncrement is defined and if stepLimit is ommitted, it will default
 	// to 100%.
 	// If StepIncrement is undefined and if stepLimit is ommitted, it will
