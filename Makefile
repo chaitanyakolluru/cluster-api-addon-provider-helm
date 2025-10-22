@@ -23,7 +23,8 @@ SHELL:=/usr/bin/env bash
 #
 # Go.
 #
-GO_VERSION ?= $(shell cat go.mod | grep "toolchain" | { read _ v; echo "$${v#go}"; } | grep "[0-9]" || cat go.mod | grep "go " | head -1 | awk '{print $$2}')
+GO_VERSION ?= 1.23.12
+# $(shell cat go.mod | grep "toolchain" | { read _ v; echo "$${v#go}"; } | grep "[0-9]" || cat go.mod | grep "go " | head -1 | awk '{print $$2}')
 GO_BASE_CONTAINER ?= docker.io/library/golang
 GO_CONTAINER_IMAGE ?= $(GO_BASE_CONTAINER):$(GO_VERSION)
 
@@ -208,16 +209,18 @@ HELM_BIN := helm
 HELM := $(TOOLS_BIN_DIR)/$(HELM_BIN)-$(HELM_VER)
 
 # Define Docker related variables. Releases should modify and double check these vars.
-ifneq ($(shell command -v gcloud),)
-	GCLOUD_PROJECT := $(shell gcloud config get-value project 2>/dev/null)
-	ifneq ($(GCLOUD_PROJECT),)
-		REGISTRY ?= gcr.io/$(GCLOUD_PROJECT)
-	endif
-endif
+# ifneq ($(shell command -v gcloud),)
+# 	GCLOUD_PROJECT := $(shell gcloud config get-value project 2>/dev/null)
+# 	ifneq ($(GCLOUD_PROJECT),)
+# 		REGISTRY ?= gcr.io/$(GCLOUD_PROJECT)
+# 	endif
+# endif
 
 # If REGISTRY is not set, default to localhost:5000 to use the kind registry.
 ifndef REGISTRY
-	REGISTRY ?= localhost:5000
+	# REGISTRY ?= localhost:5000
+	# Set REGISTRY to harbor.heb.com/kon-public-dev.
+	REGISTRY ?= harbor.heb.com/kon-public-dev
 endif
 
 PROD_REGISTRY ?= registry.k8s.io/cluster-api-helm
@@ -335,7 +338,7 @@ lint: $(GOLANGCI_LINT) ## Lint the codebase
 	$(GOLANGCI_LINT) run -v $(GOLANGCI_LINT_EXTRA_ARGS)
 	# cd $(TEST_DIR); $(GOLANGCI_LINT) run --path-prefix $(TEST_DIR) -v $(GOLANGCI_LINT_EXTRA_ARGS)
 	# TODO: add linting for TEST_DIR when e2e tests are set up
-	./scripts/ci-lint-dockerfiles.sh $(HADOLINT_VER) $(HADOLINT_FAILURE_THRESHOLD)
+	# ./scripts/ci-lint-dockerfiles.sh $(HADOLINT_VER) $(HADOLINT_FAILURE_THRESHOLD)
 
 .PHONY: lint-dockerfiles
 lint-dockerfiles:

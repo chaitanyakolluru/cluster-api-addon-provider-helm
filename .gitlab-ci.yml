@@ -1,0 +1,191 @@
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+default:
+  tags:
+    - docker
+    - gcp_large
+  image:
+    name: harbor.heb.com/kon-public/kon-gitlab-ci-utils:v1.9.8
+    entrypoint:
+      - "/usr/bin/env"
+      - "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+stages:
+  - lint
+  - test
+  - build
+  - publish
+
+# Cache templates for reuse
+.go_modules_cache: &go_modules_cache
+  key:
+    files:
+      - go.mod
+      - go.sum
+    prefix: "go-modules-v2"
+  paths:
+    - .cache/go/pkg/mod/
+  fallback_keys:
+    - "go-modules-v2-${CI_DEFAULT_BRANCH}"
+    - "go-modules-v2"
+
+.go_build_cache: &go_build_cache
+  key: "go-build-cache-${CI_COMMIT_REF_SLUG}"
+  paths:
+    - .cache/go-build/
+  fallback_keys:
+    - "go-build-cache-${CI_DEFAULT_BRANCH}"
+    - "go-build-cache"
+
+# Go environment setup template (reusable)
+.go_env_setup: &go_env_setup
+  - |
+    go version
+    export PATH=$PATH:$GOPATH/bin
+    mkdir -p $GOPATH $GOCACHE $GOMODCACHE $GOLANGCI_LINT_CACHE
+    echo "Go environment: GOPATH=$GOPATH GOCACHE=$GOCACHE GOMODCACHE=$GOMODCACHE"
+  - |
+    # Validate module cache status
+    if [ -d "$GOMODCACHE" ]; then
+      MODULE_COUNT=$(find "$GOMODCACHE" -mindepth 2 -maxdepth 2 -type d 2>/dev/null | wc -l)
+      echo "📦 Module cache contains $MODULE_COUNT cached modules"
+    fi
+
+.alpine_go_job:
+  image: ${CI_GO_IMAGE}
+  before_script:
+    - *go_env_setup
+
+# ============================================================================
+# Variables
+# ============================================================================
+
+variables:
+  CONTROLLER_IMAGE: "harbor.heb.com/kon-public-dev/cluster-api-helm-controller-amd64:${CI_COMMIT_SHORT_SHA}"
+  # Custom CI image with all Alpine dependencies pre-installed (CGO enabled)
+  CI_GO_IMAGE: "harbor.heb.com/kon-public-dev/node-image-rollout-ci:v1.1-alpine"
+  GO_IMAGE: "harbor.heb.com/docker-hub/golang"
+  GO_VERSION: "1.25-alpine"
+  DOCKER_IMAGE: "harbor.heb.com/kon-public/kon-capi-provisioner:v0.5"
+  DOCKER_DIND_IMAGE: "harbor.heb.com/docker-hub/docker:26.1.1-dind"
+  DOCKER_BUILDKIT: "1"
+  # Cache configuration - use project-relative paths
+  GOPATH: "${CI_PROJECT_DIR}/.cache/go"
+  GOCACHE: "${CI_PROJECT_DIR}/.cache/go-build"
+  GOMODCACHE: "${CI_PROJECT_DIR}/.cache/go/pkg/mod"
+  GOLANGCI_LINT_CACHE: "${CI_PROJECT_DIR}/.cache/golangci-lint"
+  # Prevent Go from using workspace files in dependencies
+  GOPROXY: "https://proxy.golang.org,direct"
+  GOSUMDB: "sum.golang.org"
+  GOWORK: "off"
+
+before_script:
+  - |
+    echo "Using Go version $GO_VERSION"
+    go version
+    export PATH=$PATH:$GOPATH/bin
+    mkdir -p $GOPATH $GOCACHE $GOMODCACHE $GOLANGCI_LINT_CACHE
+    echo "Go environment: GOPATH=$GOPATH GOCACHE=$GOCACHE GOMODCACHE=$GOMODCACHE"
+  - |
+    # Validate module cache status
+    if [ -d "$GOMODCACHE" ]; then
+      MODULE_COUNT=$(find "$GOMODCACHE" -mindepth 2 -maxdepth 2 -type d 2>/dev/null | wc -l)
+        echo "Module cache contains $MODULE_COUNT cached modules"
+    fi
+
+lint:
+  extends: .alpine_go_job
+  stage: lint
+  cache:
+    - <<: *go_modules_cache
+      policy: pull-push
+    - <<: *go_build_cache
+      policy: pull-push
+    - key: "golangci-lint-cache-${CI_COMMIT_REF_SLUG}"
+      paths:
+        - .cache/golangci-lint/
+      policy: pull-push
+      fallback_keys:
+        - "golangci-lint-cache-${CI_DEFAULT_BRANCH}"
+        - "golangci-lint-cache"
+  script:
+   - make lint
+
+unit_test:
+  extends: .alpine_go_job
+  stage: test
+  cache:
+    - <<: *go_modules_cache
+      policy: pull
+    - <<: *go_build_cache
+      policy: pull
+  script:
+    - mkdir out/
+    - make test-cover
+  artifacts:
+    expire_in: 1 day
+    when: always
+    paths:
+      - out/coverage.out
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: out/coverage.out
+
+build:
+  stage: build
+  image: ${DOCKER_IMAGE}
+  services:
+    - ${DOCKER_DIND_IMAGE}
+  cache:
+    - key: "docker-buildx-cache-${CI_COMMIT_REF_SLUG}"
+      paths:
+        - .cache/buildx/
+      policy: pull-push
+  dependencies:
+    - lint
+  variables:
+    DOCKER_BUILDKIT: 1
+    BUILDX_CACHE_FROM: type=local,src=${CI_PROJECT_DIR}/.cache/buildx
+    BUILDX_CACHE_TO: type=local,dest=${CI_PROJECT_DIR}/.cache/buildx,mode=max
+  before_script:
+    - docker info
+    - mkdir -p .cache/buildx
+    - echo "=== Docker Buildx Cache Status ==="
+    - echo "Cache directory contents:"
+    - ls -la .cache/buildx/ || echo "Cache directory empty (first run)"
+    - echo "Cache directory size:"
+    - du -sh .cache/buildx/ || echo "Cache directory not found"
+    - echo "================================="
+  script:
+    - make docker-build-amd64
+    - echo "Docker build completed, listing images:"
+    - docker images | grep cluster-api-helm-controller || true
+  only:
+    - merge_requests
+    - main
+
+push_image:
+  stage: publish
+  image: ${DOCKER_IMAGE}
+  services:
+    - ${DOCKER_DIND_IMAGE}
+  cache:
+    - key: "docker-buildx-cache-${CI_COMMIT_REF_SLUG}"
+      paths:
+        - .cache/buildx/
+      policy: pull
+  dependencies:
+    - build
+  before_script:
+    - echo "Cache status before push:"
+    - ls -la .cache/buildx/ || true
+  script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin harbor.heb.com
+    - docker push $CONTROLLER_IMAGE
+  only:
+    - main
