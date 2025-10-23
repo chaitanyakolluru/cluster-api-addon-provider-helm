@@ -65,7 +65,6 @@ stages:
 # ============================================================================
 
 variables:
-  CONTROLLER_IMAGE: "harbor.heb.com/kon-public-dev/cluster-api-helm-controller-amd64:${CI_COMMIT_SHORT_SHA}"
   # Custom CI image with all Alpine dependencies pre-installed (CGO enabled)
   CI_GO_IMAGE: "harbor.heb.com/kon-public-dev/node-image-rollout-ci:v1.1-alpine"
   GO_IMAGE: "harbor.heb.com/docker-hub/golang"
@@ -141,26 +140,8 @@ build:
   image: ${DOCKER_IMAGE}
   services:
     - ${DOCKER_DIND_IMAGE}
-  cache:
-    - key: "docker-buildx-cache-${CI_COMMIT_REF_SLUG}"
-      paths:
-        - .cache/buildx/
-      policy: pull-push
   dependencies:
     - lint
-  variables:
-    DOCKER_BUILDKIT: 1
-    BUILDX_CACHE_FROM: type=local,src=${CI_PROJECT_DIR}/.cache/buildx
-    BUILDX_CACHE_TO: type=local,dest=${CI_PROJECT_DIR}/.cache/buildx,mode=max
-  before_script:
-    - docker info
-    - mkdir -p .cache/buildx
-    - echo "=== Docker Buildx Cache Status ==="
-    - echo "Cache directory contents:"
-    - ls -la .cache/buildx/ || echo "Cache directory empty (first run)"
-    - echo "Cache directory size:"
-    - du -sh .cache/buildx/ || echo "Cache directory not found"
-    - echo "================================="
   script:
     - make docker-build-amd64
     - echo "Docker build completed, listing images:"
@@ -174,18 +155,11 @@ push_image:
   image: ${DOCKER_IMAGE}
   services:
     - ${DOCKER_DIND_IMAGE}
-  cache:
-    - key: "docker-buildx-cache-${CI_COMMIT_REF_SLUG}"
-      paths:
-        - .cache/buildx/
-      policy: pull
   dependencies:
     - build
-  before_script:
-    - echo "Cache status before push:"
-    - ls -la .cache/buildx/ || true
   script:
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin harbor.heb.com
-    - docker push $CONTROLLER_IMAGE
+    - make docker-build-amd64
+    - make docker-push-amd64
   only:
     - main
