@@ -65,7 +65,6 @@ stages:
 # ============================================================================
 
 variables:
-  CONTROLLER_IMAGE: "harbor.heb.com/kon-public-dev/cluster-api-helm-controller-amd64:${CI_COMMIT_SHORT_SHA}"
   # Custom CI image with all Alpine dependencies pre-installed (CGO enabled)
   CI_GO_IMAGE: "harbor.heb.com/kon-public-dev/node-image-rollout-ci:v1.1-alpine"
   GO_IMAGE: "harbor.heb.com/docker-hub/golang"
@@ -186,6 +185,7 @@ push_image:
     - ls -la .cache/buildx/ || true
   script:
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin harbor.heb.com
-    - docker push $CONTROLLER_IMAGE
+    - make docker-build-amd64
+    - make docker-push-amd64
   only:
     - main
